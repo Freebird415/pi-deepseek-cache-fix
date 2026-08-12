@@ -468,6 +468,7 @@ export default function (pi: ExtensionAPI) {
     if (!isActive(ctx)) {
       // 非 DeepSeek 模型:不统计、清除残留的状态栏
       ctx.ui.setStatus("cache", undefined);
+      ctx.ui.setStatus("loaded", undefined);
       return;
     }
     if (event.message.role !== "assistant") return;
@@ -483,6 +484,7 @@ export default function (pi: ExtensionAPI) {
     // R2: 计算一次，复用于状态栏与历史
     const rate = calcHitRate(cacheRead, input);
     ctx.ui.setStatus("cache", `cache ${rate.toFixed(1)}% · ${turns}t`);
+    ctx.ui.setStatus("loaded", "1. 插件已加载");
 
     // R3: 用 toFixed(1) 做定点比较，避免浮点去重失效
     const rateKey = rate.toFixed(1);
@@ -601,8 +603,10 @@ export default function (pi: ExtensionAPI) {
     setExtensionCtx(ctx);
     if (isDeepSeekModel(event.model)) {
       ctx.ui.setStatus("cache", "cache armed");
+      ctx.ui.setStatus("loaded", "1. 插件已加载");
     } else {
       ctx.ui.setStatus("cache", undefined);
+      ctx.ui.setStatus("loaded", undefined);
       lastPrefixHash = undefined;
     }
   });

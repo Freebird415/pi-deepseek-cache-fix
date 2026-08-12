@@ -296,10 +296,12 @@ describe("模型过滤:仅 DeepSeek 模型激活", () => {
   it("model_select 切到非 DeepSeek 时清空状态栏", async () => {
     await api.__emit("model_select", { model: { provider: "anthropic", id: "claude-sonnet-4-5" } });
     expect(mockCtx.ui.setStatus).toHaveBeenCalledWith("cache", undefined);
+    expect(mockCtx.ui.setStatus).toHaveBeenCalledWith("loaded", undefined);
   });
 
   it("model_select 切到 DeepSeek 时显示已激活", async () => {
     await api.__emit("model_select", { model: { provider: "deepseek", id: "deepseek-chat" } });
     expect(mockCtx.ui.setStatus).toHaveBeenCalledWith("cache", "cache armed");
+    expect(mockCtx.ui.setStatus).toHaveBeenCalledWith("loaded", "1. 插件已加载");
   });
 });
