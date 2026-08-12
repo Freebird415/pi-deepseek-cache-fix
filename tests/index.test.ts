@@ -44,6 +44,8 @@ const mockCtx = {
     custom: vi.fn().mockResolvedValue(undefined),
   },
   modelRegistry: { find: vi.fn(), getApiKeyAndHeaders: vi.fn() },
+  // 默认空历史;测试需要时在用例里替换 mockCtx.sessionManager
+  sessionManager: { getEntries: vi.fn(() => []) },
 };
 
 // ═══ P1: 命中率遥测 ═══
@@ -327,5 +329,37 @@ describe("模型过滤:仅 DeepSeek 模型激活", () => {
     // 切到非 DeepSeek 后,avg 不应被清除
     await api.__emit("message_end", { message: { role: "assistant", usage: { cacheRead: 999, input: 999, cacheWrite: 999 } } }, claudeCtx);
     expect(mockCtx.ui.setStatus).not.toHaveBeenCalledWith("avg", undefined);
+  });
+
+  it("session_start 回填历史 DeepSeek assistant 消息", async () => {
+    // 模拟 pi -c 恢复的会话：里面已有 3 条 DeepSeek assistant 消息
+    mockCtx.sessionManager.getEntries.mockReturnValueOnce([
+      { type: "message", message: { role: "user", content: "hi" } },
+      { type: "message", message: { role: "assistant", provider: "deepseek", model: "deepseek-chat", usage: { cacheRead: 80, input: 20, cacheWrite: 0 } } },
+      { type: "message", message: { role: "toolResult", toolName: "bash" } },
+      { type: "message", message: { role: "assistant", provider: "deepseek", model: "deepseek-chat", usage: { cacheRead: 90, input: 10, cacheWrite: 0 } } },
+      { type: "message", message: { role: "assistant", provider: "anthropic", model: "claude-sonnet-4-5", usage: { input: 100, output: 50 } } }, // 非 DS,不应计入
+      { type: "message", message: { role: "assistant", provider: "deepseek", model: "deepseek-chat", usage: { cacheRead: 100, input: 0, cacheWrite: 0 } } },
+    ] as any);
+    await api.__emit("session_start", { reason: "resume" });
+    // (80+90+100)/(80+90+100+20+10+0) = 270/300 = 90.0%
+    expect(mockCtx.ui.setStatus).toHaveBeenCalledWith("avg", "avg cache 90.0% · ");
+  });
+
+  it("session_start 回填也支持 OpenRouter deepseek/", async () => {
+    mockCtx.sessionManager.getEntries.mockReturnValueOnce([
+      { type: "message", message: { role: "assistant", provider: "openrouter", model: "deepseek/deepseek-chat", usage: { cacheRead: 95, input: 5, cacheWrite: 0 } } },
+    ] as any);
+    await api.__emit("session_start", { reason: "new" });
+    expect(mockCtx.ui.setStatus).toHaveBeenCalledWith("avg", "avg cache 95.0% · ");
+  });
+
+  it("reload 时不回填(避免重复计数)", async () => {
+    mockCtx.sessionManager.getEntries.mockReturnValueOnce([
+      { type: "message", message: { role: "assistant", provider: "deepseek", model: "deepseek-chat", usage: { cacheRead: 80, input: 20, cacheWrite: 0 } } },
+    ] as any);
+    await api.__emit("session_start", { reason: "reload" });
+    // reload 跳过回填,avg 仍是初始 0.0%
+    expect(mockCtx.ui.setStatus).toHaveBeenCalledWith("avg", "avg cache 0.0% · ");
   });
 });

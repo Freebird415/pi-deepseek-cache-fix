@@ -468,19 +468,34 @@ export default function (pi: ExtensionAPI) {
     (r + i) ? (r / (r + i)) * 100 : 0;
 
   // ───────── 会话级常驻平均命中率 ─────────
-  pi.on("session_start", async (_event, ctx) => {
+  pi.on("session_start", async (event, ctx) => {
     setExtensionCtx(ctx);
     sessionCacheRead = 0;
     sessionInput = 0;
-    ctx.ui.setStatus("avg", "avg cache 0.0% · ");
+
+    // 回填历史 DeepSeek 消息的 cacheRead/input。reload 跳过,避免重复计数。
+    if (event.reason !== "reload") {
+      for (const entry of ctx.sessionManager.getEntries()) {
+        if (entry.type !== "message") continue;
+        const msg = entry.message;
+        if (msg.role !== "assistant") continue;
+        if (!isDeepSeekModel({ provider: msg.provider, id: msg.model })) continue;
+        const u = msg.usage;
+        if (!u) continue;
+        sessionCacheRead += u.cacheRead ?? 0;
+        sessionInput += u.input ?? 0;
+      }
+    }
+
+    const sessionRate = calcHitRate(sessionCacheRead, sessionInput);
+    ctx.ui.setStatus("avg", `avg cache ${sessionRate.toFixed(1)}% · `);
   });
 
   pi.on("message_end", async (event, ctx) => {
     setExtensionCtx(ctx);
     if (!isActive(ctx)) {
-      // 非 DeepSeek 模型:不统计、清除残留的状态栏
+      // 非 DeepSeek 模型:不统计、清除残留的状态栏（avg 常驻,不清除）
       ctx.ui.setStatus("cache", undefined);
-      ctx.ui.setStatus("loaded", undefined);
       return;
     }
     if (event.message.role !== "assistant") return;
@@ -620,10 +635,8 @@ export default function (pi: ExtensionAPI) {
     setExtensionCtx(ctx);
     if (isDeepSeekModel(event.model)) {
       ctx.ui.setStatus("cache", "cache armed");
-      ctx.ui.setStatus("loaded", "1. 插件已加载");
     } else {
       ctx.ui.setStatus("cache", undefined);
-      ctx.ui.setStatus("loaded", undefined);
       lastPrefixHash = undefined;
     }
   });
