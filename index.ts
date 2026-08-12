@@ -454,6 +454,10 @@ export default function (pi: ExtensionAPI) {
   // ───────── P1 命中率遥测(持久化) ─────────
   const persisted = loadStats();
   let { cacheRead, input, cacheWrite, turns } = persisted;
+  // 该对话（本会话）平均命中率 — 常驻显示,session_start 时重置,
+  // 不写入 stats.json,独立于跨会话累计
+  let sessionCacheRead = 0;
+  let sessionInput = 0;
   const hitRateHistory = loadHistory();
   let lastHitRate = hitRateHistory.length > 0
     ? hitRateHistory[hitRateHistory.length - 1].hitRate
@@ -462,6 +466,14 @@ export default function (pi: ExtensionAPI) {
   /** R2: 单一命中率计算函数 */
   const calcHitRate = (r: number, i: number): number =>
     (r + i) ? (r / (r + i)) * 100 : 0;
+
+  // ───────── 会话级常驻平均命中率 ─────────
+  pi.on("session_start", async (_event, ctx) => {
+    setExtensionCtx(ctx);
+    sessionCacheRead = 0;
+    sessionInput = 0;
+    ctx.ui.setStatus("avg", "avg cache 0.0%");
+  });
 
   pi.on("message_end", async (event, ctx) => {
     setExtensionCtx(ctx);
@@ -478,12 +490,18 @@ export default function (pi: ExtensionAPI) {
     input += u.input ?? 0;
     cacheWrite += u.cacheWrite ?? 0;
     turns += 1;
+    // 该对话（本会话）累计 — 仅用于常驻 avg 显示
+    sessionCacheRead += u.cacheRead ?? 0;
+    sessionInput += u.input ?? 0;
 
     scheduleSaveStats({ cacheRead, input, cacheWrite, turns });
 
     // R2: 计算一次，复用于状态栏与历史
     const rate = calcHitRate(cacheRead, input);
-    ctx.ui.setStatus("cache", `cache ${rate.toFixed(1)}% · ${turns}t`);
+    // 该对话平均命中率 — 常驻显示，DeepSeek 之外也保留
+    const sessionRate = calcHitRate(sessionCacheRead, sessionInput);
+    ctx.ui.setStatus("avg", `avg cache ${sessionRate.toFixed(1)}%`);
+    // cache 槽保持 "cache armed" 标签（实际命中率见 avg）
     ctx.ui.setStatus("loaded", "1. 插件已加载");
 
     // R3: 用 toFixed(1) 做定点比较，避免浮点去重失效
