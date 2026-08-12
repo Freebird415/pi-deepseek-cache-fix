@@ -1,0 +1,57 @@
+{
+  "name": "pi-deepseek-cache",
+  "version": "0.1.0",
+  "description": "DeepSeek prefix-cache extension for pi — hit-rate telemetry, prefix guard, and cache-friendly compaction.",
+  "type": "module",
+  "main": "./index.ts",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "files": [
+    "index.ts",
+    "README.md",
+    "README.zh.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint . && prettier --check .",
+    "lint:fix": "eslint --fix . && prettier --write ."
+  },
+  "keywords": [
+    "pi",
+    "pi-package",
+    "deepseek",
+    "cache",
+    "prefix-cache",
+    "coding-agent",
+    "extension"
+  ],
+  "author": "ruanbw",
+  "license": "MIT",
+  "dependencies": {
+    "@earendil-works/pi-ai": "^0.78.0",
+    "@earendil-works/pi-coding-agent": "^0.78.0",
+    "@earendil-works/pi-tui": "^0.78.0"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.0",
+    "eslint": "^9.0.0",
+    "@eslint/js": "^9.0.0",
+    "typescript-eslint": "^8.0.0",
+    "prettier": "^3.0.0"
+  },
+  "pi": {
+    "extensions": ["./index.ts"]
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ruanbw/pi-deepseek-cache.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ruanbw/pi-deepseek-cache/issues"
+  },
+  "homepage": "https://github.com/ruanbw/pi-deepseek-cache#readme"
+}
