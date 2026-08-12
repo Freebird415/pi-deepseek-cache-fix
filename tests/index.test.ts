@@ -248,13 +248,13 @@ describe("模型过滤:仅 DeepSeek 模型激活", () => {
   it("DeepSeek 直连时正常累计遥测并显示该对话平均命中率", async () => {
     await api.__emit("message_end", { message: { role: "assistant", usage: { cacheRead: 100, input: 50, cacheWrite: 10 } } });
     // 100 / (100+50) = 66.7%
-    expect(mockCtx.ui.setStatus).toHaveBeenCalledWith("avg", "avg cache 66.7%");
+    expect(mockCtx.ui.setStatus).toHaveBeenCalledWith("avg", "avg cache 66.7% · ");
   });
 
   it("经 OpenRouter 使用的 deepseek/ 模型同样激活", async () => {
     const orCtx = { ...mockCtx, model: { provider: "openrouter", id: "deepseek/deepseek-chat" } };
     await api.__emit("message_end", { message: { role: "assistant", usage: { cacheRead: 100, input: 50, cacheWrite: 10 } } }, orCtx);
-    expect(orCtx.ui.setStatus).toHaveBeenCalledWith("avg", "avg cache 66.7%");
+    expect(orCtx.ui.setStatus).toHaveBeenCalledWith("avg", "avg cache 66.7% · ");
   });
 
   it("非 DeepSeek 模型时不累计遥测、状态栏被清除", async () => {
@@ -297,29 +297,27 @@ describe("模型过滤:仅 DeepSeek 模型激活", () => {
   it("model_select 切到非 DeepSeek 时清空状态栏", async () => {
     await api.__emit("model_select", { model: { provider: "anthropic", id: "claude-sonnet-4-5" } });
     expect(mockCtx.ui.setStatus).toHaveBeenCalledWith("cache", undefined);
-    expect(mockCtx.ui.setStatus).toHaveBeenCalledWith("loaded", undefined);
   });
 
   it("model_select 切到 DeepSeek 时显示已激活", async () => {
     await api.__emit("model_select", { model: { provider: "deepseek", id: "deepseek-chat" } });
     expect(mockCtx.ui.setStatus).toHaveBeenCalledWith("cache", "cache armed");
-    expect(mockCtx.ui.setStatus).toHaveBeenCalledWith("loaded", "1. 插件已加载");
   });
 
   // ───────── 常驻 avg 命中率 ─────────
   it("session_start 时 avg 初始化为 0.0%", async () => {
     await api.__emit("session_start", { reason: "new" });
-    expect(mockCtx.ui.setStatus).toHaveBeenCalledWith("avg", "avg cache 0.0%");
+    expect(mockCtx.ui.setStatus).toHaveBeenCalledWith("avg", "avg cache 0.0% · ");
   });
 
   it("DeepSeek 消息后 avg 更新为该对话命中率", async () => {
     await api.__emit("session_start", { reason: "new" });
     await api.__emit("message_end", { message: { role: "assistant", usage: { cacheRead: 80, input: 20, cacheWrite: 0 } } });
-    expect(mockCtx.ui.setStatus).toHaveBeenCalledWith("avg", "avg cache 80.0%");
+    expect(mockCtx.ui.setStatus).toHaveBeenCalledWith("avg", "avg cache 80.0% · ");
     // 再一条
     await api.__emit("message_end", { message: { role: "assistant", usage: { cacheRead: 90, input: 10, cacheWrite: 0 } } });
     // (80+90)/(80+90+20+10) = 170/200 = 85.0%
-    expect(mockCtx.ui.setStatus).toHaveBeenCalledWith("avg", "avg cache 85.0%");
+    expect(mockCtx.ui.setStatus).toHaveBeenCalledWith("avg", "avg cache 85.0% · ");
   });
 
   it("切到非 DeepSeek 后 avg 仍保留(常驻)", async () => {

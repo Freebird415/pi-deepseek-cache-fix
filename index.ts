@@ -472,7 +472,7 @@ export default function (pi: ExtensionAPI) {
     setExtensionCtx(ctx);
     sessionCacheRead = 0;
     sessionInput = 0;
-    ctx.ui.setStatus("avg", "avg cache 0.0%");
+    ctx.ui.setStatus("avg", "avg cache 0.0% · ");
   });
 
   pi.on("message_end", async (event, ctx) => {
@@ -500,9 +500,8 @@ export default function (pi: ExtensionAPI) {
     const rate = calcHitRate(cacheRead, input);
     // 该对话平均命中率 — 常驻显示，DeepSeek 之外也保留
     const sessionRate = calcHitRate(sessionCacheRead, sessionInput);
-    ctx.ui.setStatus("avg", `avg cache ${sessionRate.toFixed(1)}%`);
+    ctx.ui.setStatus("avg", `avg cache ${sessionRate.toFixed(1)}% · `);
     // cache 槽保持 "cache armed" 标签（实际命中率见 avg）
-    ctx.ui.setStatus("loaded", "1. 插件已加载");
 
     // R3: 用 toFixed(1) 做定点比较，避免浮点去重失效
     const rateKey = rate.toFixed(1);
