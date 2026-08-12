@@ -28,14 +28,16 @@ function createMockExtensionAPI() {
       listeners.get(event)!.push(listener);
     }),
     registerCommand: vi.fn((name: string, cmd: any) => { commands.set(name, cmd); }),
-    __emit: async (event: string, data: any) => {
-      for (const fn of listeners.get(event) ?? []) await fn(data, mockCtx);
+    __emit: async (event: string, data: any, ctxOverride?: unknown) => {
+      for (const fn of listeners.get(event) ?? []) await fn(data, ctxOverride ?? mockCtx);
     },
+    __getListener: (event: string) => listeners.get(event)?.[0] ?? null,
     __getCommand: (name: string) => commands.get(name),
   };
 }
 
 const mockCtx = {
+  model: { provider: "deepseek", id: "deepseek-chat" },
   ui: {
     setStatus: vi.fn(),
     notify: vi.fn(),
@@ -108,6 +110,31 @@ describe("P1a: cache-graph command", () => {
     }
     await api.__getCommand("cache-graph")!.handler([], mockCtx);
     expect(mockCtx.ui.custom).toHaveBeenCalled();
+  });
+
+  // 渲染辅助:直接执行传给 ui.custom 的回调,拿到 overlay 实例后调用 render
+  const fakeTheme = { fg: (_k: string, s: string) => s };
+  const renderGraph = async () => {
+    await api.__getCommand("cache-graph")!.handler([], mockCtx);
+    const cb = mockCtx.ui.custom.mock.calls[0][0];
+    const overlay = cb(null, fakeTheme, null, () => {});
+    return overlay.render(60);
+  };
+
+  it("命中率有波动时正常渲染图表", async () => {
+    for (const [cr, inp] of [[0,100],[50,50],[80,20],[90,10],[95,5]]) {
+      await api.__emit("message_end", { message: { role: "assistant", usage: { cacheRead: cr, input: inp, cacheWrite: 0 } } });
+    }
+    const lines = await renderGraph();
+    expect(lines.length).toBeGreaterThan(3);
+  });
+
+  it("命中率无波动时也能渲染图表(修复 chart 未声明 bug)", async () => {
+    for (let i = 0; i < 5; i++) {
+      await api.__emit("message_end", { message: { role: "assistant", usage: { cacheRead: 50, input: 50, cacheWrite: 0 } } });
+    }
+    const lines = await renderGraph();
+    expect(lines.length).toBeGreaterThan(3);
   });
 });
 
@@ -199,5 +226,80 @@ describe("P3: session_before_compact", () => {
     vi.mocked(complete).mockResolvedValueOnce({ content: [{ type: "text", text: "   " }] } as any);
     const listener = (api.on as any).mock.calls.find(([e]: [string]) => e === "session_before_compact")?.[1];
     expect(await listener({ preparation: { messagesToSummarize: [], firstKeptEntryId: "e1", tokensBefore: 500, previousSummary: "" }, signal: new AbortController().signal }, mockCtx)).toBeUndefined();
+  });
+});
+
+// ═══ R13: 模型过滤 — 仅 DeepSeek 模型激活 ═══
+describe("模型过滤:仅 DeepSeek 模型激活", () => {
+  let api: ReturnType<typeof createMockExtensionAPI>;
+  const claudeCtx = { ...mockCtx, model: { provider: "anthropic", id: "claude-sonnet-4-5" } };
+
+  beforeEach(() => {
+    clearPersistedData();
+    // 清理共享 mock 的调用历史,避免跨用例污染
+    mockCtx.ui.setStatus.mockClear();
+    mockCtx.ui.notify.mockClear();
+    mockCtx.ui.custom.mockClear();
+    vi.mocked(complete).mockClear();
+    api = createMockExtensionAPI();
+    index(api as any);
+  });
+
+  it("DeepSeek 直连时正常累计遥测并显示状态栏", async () => {
+    await api.__emit("message_end", { message: { role: "assistant", usage: { cacheRead: 100, input: 50, cacheWrite: 10 } } });
+    expect(mockCtx.ui.setStatus).toHaveBeenCalledWith("cache", expect.stringContaining("cache"));
+  });
+
+  it("经 OpenRouter 使用的 deepseek/ 模型同样激活", async () => {
+    const orCtx = { ...mockCtx, model: { provider: "openrouter", id: "deepseek/deepseek-chat" } };
+    await api.__emit("message_end", { message: { role: "assistant", usage: { cacheRead: 100, input: 50, cacheWrite: 10 } } }, orCtx);
+    expect(orCtx.ui.setStatus).toHaveBeenCalledWith("cache", expect.stringContaining("cache"));
+  });
+
+  it("非 DeepSeek 模型时不累计遥测、状态栏被清除", async () => {
+    await api.__emit("message_end", { message: { role: "assistant", usage: { cacheRead: 100, input: 50, cacheWrite: 10 } } }, claudeCtx);
+    expect(claudeCtx.ui.setStatus).toHaveBeenCalledWith("cache", undefined);
+    // 统计未累计 → /cache-stats 提示未激活,不弹窗
+    await api.__getCommand("cache-stats")!.handler([], claudeCtx);
+    expect(claudeCtx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("未激活"), "info");
+    expect(claudeCtx.ui.custom).not.toHaveBeenCalled();
+  });
+
+  it("非 DeepSeek 模型时 context 不过滤 volatile-scratch", async () => {
+    const messages = [
+      { role: "system", content: "keep" },
+      { role: "user", customType: "volatile-scratch", content: "scratch" },
+    ];
+    const ctx = api.__getListener("context");
+    expect(await ctx({ messages }, claudeCtx)).toBeUndefined();
+  });
+
+  it("非 DeepSeek 模型时 before_provider_request 不告警", async () => {
+    const listener = api.__getListener("before_provider_request");
+    listener({ payload: { messages: [{ role: "user", content: "a" }] } }, claudeCtx);
+    listener({ payload: { messages: [{ role: "user", content: "b" }] } }, claudeCtx);
+    expect(claudeCtx.ui.notify).not.toHaveBeenCalled();
+  });
+
+  it("非 DeepSeek 模型时 compaction 回退默认(不调用 flash)", async () => {
+    mockCtx.modelRegistry.find.mockReturnValue({ id: "deepseek-v4-flash", provider: "deepseek" });
+    mockCtx.modelRegistry.getApiKeyAndHeaders.mockResolvedValue({ ok: true, apiKey: "sk-test", headers: {} });
+    const listener = api.__getListener("session_before_compact");
+    const result = await listener(
+      { preparation: { messagesToSummarize: [{ role: "user", content: "hello" }], firstKeptEntryId: "e1", tokensBefore: 1000, previousSummary: "" }, signal: new AbortController().signal },
+      claudeCtx,
+    );
+    expect(result).toBeUndefined();
+    expect(complete).not.toHaveBeenCalled();
+  });
+
+  it("model_select 切到非 DeepSeek 时清空状态栏", async () => {
+    await api.__emit("model_select", { model: { provider: "anthropic", id: "claude-sonnet-4-5" } });
+    expect(mockCtx.ui.setStatus).toHaveBeenCalledWith("cache", undefined);
+  });
+
+  it("model_select 切到 DeepSeek 时显示已激活", async () => {
+    await api.__emit("model_select", { model: { provider: "deepseek", id: "deepseek-chat" } });
+    expect(mockCtx.ui.setStatus).toHaveBeenCalledWith("cache", "cache armed");
   });
 });

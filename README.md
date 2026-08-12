@@ -40,6 +40,21 @@ In long agent sessions that's surprisingly hard:
 - **Cache-Friendly Compaction** — uses `deepseek-v4-flash` (temperature: 0) for deterministic summarization, with SHA-256–cached results persisted across sessions
 - **`/cache-reset`** — clear all stats, history, and summary cache with one command
 
+## 🔒 Model gating (added in this fork)
+
+By default this fork only activates when a **DeepSeek** model is in use. With any other model (Claude / GPT / Gemini …):
+
+- No context interference, no prefix monitoring, no cache status bar
+- Compaction falls back to pi's default (no flash summarizer call)
+- `/cache-stats` `/cache-graph` `/cache-reset` show "not active" notice
+
+Matching rule (`isDeepSeekModel` in `index.ts`):
+
+- `provider === "deepseek"` (direct)
+- or `provider === "openrouter"` with model id starting with `deepseek/` (via OpenRouter)
+
+Status bar is cleared on model switch away, and shows `cache armed` when switching to DeepSeek.
+
 ## 📦 Installation
 
 Requires [Pi](https://pi.dev) and Node.js ≥ 18.

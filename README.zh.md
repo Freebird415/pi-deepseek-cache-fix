@@ -40,6 +40,21 @@ DeepSeek API 内置了**磁盘上下文缓存**：任何提示**前缀**与之�
 - **缓存友好的 compaction** — 使用 `deepseek-v4-flash`（temperature: 0）做确定性摘要，SHA-256 缓存结果跨会话复用
 - **`/cache-reset`** — 一条命令清空所有统计、历史和摘要缓存
 
+## 🔒 模型过滤(本分支新增)
+
+本分支默认**仅在 DeepSeek 模型下激活**,其他模型(Claude / GPT / Gemini …)下:
+
+- 不干预上下文、不做前缀监控、不显示缓存状态栏
+- compaction 回退 pi 默认实现(不调用 flash 摘要)
+- `/cache-stats` `/cache-graph` `/cache-reset` 提示"当前模型不是 DeepSeek,缓存扩展未激活"
+
+判定规则(`index.ts` 中 `isDeepSeekModel`):
+
+- `provider === "deepseek"`(直连)
+- 或 `provider === "openrouter"` 且模型 id 以 `deepseek/` 开头(经 OpenRouter 代理使用 DeepSeek)
+
+切换模型时自动清理状态栏,切回 DeepSeek 时显示 `cache armed`。
+
 ## 📦 安装
 
 需要 [Pi](https://pi.dev) 和 Node.js ≥ 18。

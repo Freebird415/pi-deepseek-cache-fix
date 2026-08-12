@@ -227,9 +227,9 @@ class CacheStatsOverlay implements Focusable {
 
   private stats: PersistedStats;
   private theme: Theme;
-  private done: () => void;
+  private done: (result: unknown) => void;
 
-  constructor(theme: Theme, stats: PersistedStats, done: () => void) {
+  constructor(theme: Theme, stats: PersistedStats, done: (result: unknown) => void) {
     this.theme = theme;
     this.stats = stats;
     this.done = done;
@@ -237,7 +237,7 @@ class CacheStatsOverlay implements Focusable {
 
   handleInput(data: string): void {
     if (matchesKey(data, "escape") || matchesKey(data, "return")) {
-      this.done();
+      this.done(undefined);
     }
   }
 
@@ -284,9 +284,9 @@ class CacheGraphOverlay implements Focusable {
 
   private history: HistoryPoint[];
   private theme: Theme;
-  private done: () => void;
+  private done: (result: unknown) => void;
 
-  constructor(theme: Theme, history: HistoryPoint[], done: () => void) {
+  constructor(theme: Theme, history: HistoryPoint[], done: (result: unknown) => void) {
     this.theme = theme;
     this.history = history;
     this.done = done;
@@ -294,7 +294,7 @@ class CacheGraphOverlay implements Focusable {
 
   handleInput(data: string): void {
     if (matchesKey(data, "escape") || matchesKey(data, "return")) {
-      this.done();
+      this.done(undefined);
     }
   }
 
@@ -332,6 +332,7 @@ class CacheGraphOverlay implements Focusable {
     const yW = Math.max(maxRate.toFixed(0).length, minRate.toFixed(0).length) + 1;
 
     // R6: 命中率无波动时的特殊处理
+    const chart: string[] = [];
     if (maxRate - minRate < FLAT_CHART_EPSILON) {
       const mid = Math.floor(data.length / 2);
       const chartLine = " ".repeat(mid) + "━".repeat(1) + " ".repeat(data.length - mid - 1);
@@ -368,7 +369,6 @@ class CacheGraphOverlay implements Focusable {
 
       // R5: X 轴标签用字符数组定点填充，避免 padEnd 偏移错位
       const first = data[0].turn;
-      const mid = data[Math.floor(data.length / 2)]?.turn ?? "";
       const last = data[data.length - 1].turn;
       const xChars = new Array(data.length).fill(" ");
 
@@ -377,6 +377,7 @@ class CacheGraphOverlay implements Focusable {
       for (let i = 0; i < firstStr.length && i < data.length; i++) xChars[i] = firstStr[i];
 
       // 中标签居中
+      const mid = data.length ? String(data[Math.floor(data.length / 2)].turn) : "";
       if (mid !== "") {
         const midStr = String(mid);
         const midStart = Math.floor((data.length - midStr.length) / 2);
@@ -420,6 +421,28 @@ class CacheGraphOverlay implements Focusable {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+//  模型过滤 — 仅 DeepSeek 模型激活本扩展（R13）
+// ═══════════════════════════════════════════════════════════════════════════
+
+interface ModelRef {
+  provider?: string;
+  id?: string;
+}
+
+/** 是否为 DeepSeek 模型。直连 provider=deepseek 命中;
+ *  经 OpenRouter 等代理时模型 id 形如 "deepseek/deepseek-chat"。 */
+function isDeepSeekModel(model: ModelRef | undefined): boolean {
+  if (!model) return false;
+  if (model.provider === "deepseek") return true;
+  return model.provider === "openrouter" && (model.id ?? "").startsWith("deepseek/");
+}
+
+/** 当前会话是否处于激活状态(正在使用 DeepSeek 模型) */
+function isActive(ctx: ExtensionContext): boolean {
+  return isDeepSeekModel(ctx.model);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 //  扩展主逻辑
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -442,6 +465,11 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("message_end", async (event, ctx) => {
     setExtensionCtx(ctx);
+    if (!isActive(ctx)) {
+      // 非 DeepSeek 模型:不统计、清除残留的状态栏
+      ctx.ui.setStatus("cache", undefined);
+      return;
+    }
     if (event.message.role !== "assistant") return;
     const u = event.message.usage;
     if (!u) return;
@@ -475,6 +503,10 @@ export default function (pi: ExtensionAPI) {
     description: "DeepSeek 前缀缓存命中率",
     handler: async (_args, ctx) => {
       setExtensionCtx(ctx);
+      if (!isActive(ctx)) {
+        await ctx.ui.notify("当前模型不是 DeepSeek,缓存扩展未激活", "info");
+        return;
+      }
       await ctx.ui.custom(
         (_tui, theme, _kb, done) =>
           new CacheStatsOverlay(theme, { cacheRead, input, cacheWrite, turns }, done),
@@ -488,6 +520,10 @@ export default function (pi: ExtensionAPI) {
     description: "DeepSeek 缓存命中率趋势图",
     handler: async (_args, ctx) => {
       setExtensionCtx(ctx);
+      if (!isActive(ctx)) {
+        await ctx.ui.notify("当前模型不是 DeepSeek,缓存扩展未激活", "info");
+        return;
+      }
       await ctx.ui.custom(
         (_tui, theme, _kb, done) =>
           new CacheGraphOverlay(theme, hitRateHistory, done),
@@ -501,6 +537,10 @@ export default function (pi: ExtensionAPI) {
     description: "重置 DeepSeek 缓存统计数据",
     handler: async (_args, ctx) => {
       setExtensionCtx(ctx);
+      if (!isActive(ctx)) {
+        await ctx.ui.notify("当前模型不是 DeepSeek,缓存扩展未激活", "info");
+        return;
+      }
       // 二次确认
       await ctx.ui.notify("缓存统计已重置", "info");
       cacheRead = 0;
@@ -525,7 +565,10 @@ export default function (pi: ExtensionAPI) {
   // ───────── P2 前缀守卫 ─────────
   pi.on("context", async (event, ctx) => {
     setExtensionCtx(ctx);
-    const onWire = event.messages.filter((m: CachedMessage) => m?.customType !== "volatile-scratch");
+    if (!isActive(ctx)) return; // 非 DeepSeek:不干预上下文
+    const onWire = event.messages.filter(
+      (m: unknown) => (m as { customType?: string } | undefined)?.customType !== "volatile-scratch",
+    );
     return { messages: onWire };
   });
 
@@ -534,6 +577,10 @@ export default function (pi: ExtensionAPI) {
   let prefixBreaks = 0;
   pi.on("before_provider_request", (event, ctx) => {
     setExtensionCtx(ctx);
+    if (!isActive(ctx)) {
+      lastPrefixHash = undefined; // 复位指纹,避免切回 DeepSeek 时误报前缀变化
+      return;
+    }
     const msgs = (event.payload as ProviderPayload).messages ?? [];
     const currentPrefixHash = createHash("sha256")
       .update(JSON.stringify(msgs.slice(0, -1))).digest("hex");
@@ -549,11 +596,23 @@ export default function (pi: ExtensionAPI) {
     lastPrefixHash = currentPrefixHash;
   });
 
+  // ───────── 模型切换:离开 DeepSeek 时清理状态 ─────────
+  pi.on("model_select", (event, ctx) => {
+    setExtensionCtx(ctx);
+    if (isDeepSeekModel(event.model)) {
+      ctx.ui.setStatus("cache", "cache armed");
+    } else {
+      ctx.ui.setStatus("cache", undefined);
+      lastPrefixHash = undefined;
+    }
+  });
+
   // ───────── P3 缓存友好的 compaction ─────────
   const summaryCache = loadSummaryCache(); // R12: 从磁盘加载摘要缓存，跨会话复用
   pi.on("session_before_compact", async (event, ctx) => {
     setExtensionCtx(ctx);
-    flushPendingWrites(); // R8: compaction 前强制 flush，避免丢失未写数据
+    if (!isActive(ctx)) return; // 非 DeepSeek:使用 pi 默认 compaction
+    flushPendingWrites(); // R8: compaction 前强制 flush,避免丢失未写数据
     const { preparation, signal } = event;
     const { messagesToSummarize, firstKeptEntryId, tokensBefore, previousSummary } = preparation;
 
@@ -619,9 +678,8 @@ async function summarizeWithFlash(
             timestamp: Date.now(),
           },
         ],
-        temperature: 0,
       },
-      { apiKey: auth.apiKey, headers: auth.headers, maxTokens: SUMMARY_MAX_TOKENS, signal },
+      { apiKey: auth.apiKey, headers: auth.headers, maxTokens: SUMMARY_MAX_TOKENS, signal, temperature: 0 },
     );
 
     const summary = response.content
