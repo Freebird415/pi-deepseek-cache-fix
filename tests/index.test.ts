@@ -331,19 +331,20 @@ describe("模型过滤:仅 DeepSeek 模型激活", () => {
     expect(mockCtx.ui.setStatus).not.toHaveBeenCalledWith("avg", undefined);
   });
 
-  it("session_start 回填历史 DeepSeek assistant 消息", async () => {
-    // 模拟 pi -c 恢复的会话：里面已有 3 条 DeepSeek assistant 消息
+  it("session_start 回填历史 assistant 消息(无论模型)", async () => {
+    // 模拟 pi -c 恢复的会话:混合模型的 assistant 消息都计入
     mockCtx.sessionManager.getEntries.mockReturnValueOnce([
       { type: "message", message: { role: "user", content: "hi" } },
       { type: "message", message: { role: "assistant", provider: "deepseek", model: "deepseek-chat", usage: { cacheRead: 80, input: 20, cacheWrite: 0 } } },
       { type: "message", message: { role: "toolResult", toolName: "bash" } },
       { type: "message", message: { role: "assistant", provider: "deepseek", model: "deepseek-chat", usage: { cacheRead: 90, input: 10, cacheWrite: 0 } } },
-      { type: "message", message: { role: "assistant", provider: "anthropic", model: "claude-sonnet-4-5", usage: { input: 100, output: 50 } } }, // 非 DS,不应计入
+      // 非 DeepSeek(如 Claude)带 cacheRead 的也计入
+      { type: "message", message: { role: "assistant", provider: "anthropic", model: "claude-sonnet-4-5", usage: { cacheRead: 60, input: 40, cacheWrite: 0 } } },
       { type: "message", message: { role: "assistant", provider: "deepseek", model: "deepseek-chat", usage: { cacheRead: 100, input: 0, cacheWrite: 0 } } },
     ] as any);
     await api.__emit("session_start", { reason: "resume" });
-    // (80+90+100)/(80+90+100+20+10+0) = 270/300 = 90.0%
-    expect(mockCtx.ui.setStatus).toHaveBeenCalledWith("avg", "avg cache 90.0% · ");
+    // cacheRead: 80+90+60+100 = 330, input: 20+10+40+0 = 70 → 330/400 = 82.5%
+    expect(mockCtx.ui.setStatus).toHaveBeenCalledWith("avg", "avg cache 82.5% · ");
   });
 
   it("session_start 回填也支持 OpenRouter deepseek/", async () => {
@@ -354,12 +355,30 @@ describe("模型过滤:仅 DeepSeek 模型激活", () => {
     expect(mockCtx.ui.setStatus).toHaveBeenCalledWith("avg", "avg cache 95.0% · ");
   });
 
-  it("reload 时不回填(避免重复计数)", async () => {
+  it("reload 时也回填(对话平均命中率不丢失)", async () => {
     mockCtx.sessionManager.getEntries.mockReturnValueOnce([
       { type: "message", message: { role: "assistant", provider: "deepseek", model: "deepseek-chat", usage: { cacheRead: 80, input: 20, cacheWrite: 0 } } },
     ] as any);
     await api.__emit("session_start", { reason: "reload" });
-    // reload 跳过回填,avg 仍是初始 0.0%
-    expect(mockCtx.ui.setStatus).toHaveBeenCalledWith("avg", "avg cache 0.0% · ");
+    expect(mockCtx.ui.setStatus).toHaveBeenCalledWith("avg", "avg cache 80.0% · ");
+  });
+
+  it("非 DeepSeek 模型的消息也会更新 avg", async () => {
+    await api.__emit("session_start", { reason: "new" });
+    // Claude 消息:cacheRead 100 / input 100 → 50%
+    await api.__emit("message_end", { message: { role: "assistant", usage: { cacheRead: 100, input: 100, cacheWrite: 0 } } }, claudeCtx);
+    expect(mockCtx.ui.setStatus).toHaveBeenCalledWith("avg", "avg cache 50.0% · ");
+    // 且 cache 标签被清除(非 DeepSeek)
+    expect(claudeCtx.ui.setStatus).toHaveBeenCalledWith("cache", undefined);
+  });
+
+  it("混合模型连续消息:avg 累加全部模型的 cacheRead/input", async () => {
+    await api.__emit("session_start", { reason: "new" });
+    // DeepSeek 消息
+    await api.__emit("message_end", { message: { role: "assistant", usage: { cacheRead: 80, input: 20, cacheWrite: 0 } } });
+    // Claude 消息
+    await api.__emit("message_end", { message: { role: "assistant", usage: { cacheRead: 10, input: 90, cacheWrite: 0 } } }, claudeCtx);
+    // (80+10)/(80+20+10+90) = 90/200 = 45.0%
+    expect(mockCtx.ui.setStatus).toHaveBeenCalledWith("avg", "avg cache 45.0% · ");
   });
 });

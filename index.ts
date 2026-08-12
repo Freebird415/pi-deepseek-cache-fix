@@ -468,23 +468,21 @@ export default function (pi: ExtensionAPI) {
     (r + i) ? (r / (r + i)) * 100 : 0;
 
   // ───────── 会话级常驻平均命中率 ─────────
-  pi.on("session_start", async (event, ctx) => {
+  pi.on("session_start", async (_event, ctx) => {
     setExtensionCtx(ctx);
     sessionCacheRead = 0;
     sessionInput = 0;
 
-    // 回填历史 DeepSeek 消息的 cacheRead/input。reload 跳过,避免重复计数。
-    if (event.reason !== "reload") {
-      for (const entry of ctx.sessionManager.getEntries()) {
-        if (entry.type !== "message") continue;
-        const msg = entry.message;
-        if (msg.role !== "assistant") continue;
-        if (!isDeepSeekModel({ provider: msg.provider, id: msg.model })) continue;
-        const u = msg.usage;
-        if (!u) continue;
-        sessionCacheRead += u.cacheRead ?? 0;
-        sessionInput += u.input ?? 0;
-      }
+    // 回填历史 assistant 消息的 cacheRead/input —— 无论模型,
+    // 得到整个对话的平均缓存命中率
+    for (const entry of ctx.sessionManager.getEntries()) {
+      if (entry.type !== "message") continue;
+      const msg = entry.message;
+      if (msg.role !== "assistant") continue;
+      const u = msg.usage;
+      if (!u) continue;
+      sessionCacheRead += u.cacheRead ?? 0;
+      sessionInput += u.input ?? 0;
     }
 
     const sessionRate = calcHitRate(sessionCacheRead, sessionInput);
@@ -493,8 +491,22 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("message_end", async (event, ctx) => {
     setExtensionCtx(ctx);
+
+    // ── 常驻 avg:无论什么模型,每条 assistant 消息都累计,
+    //    得到整个对话的平均缓存命中率 ──
+    if (event.message.role === "assistant") {
+      const u = event.message.usage;
+      if (u) {
+        sessionCacheRead += u.cacheRead ?? 0;
+        sessionInput += u.input ?? 0;
+        const sessionRate = calcHitRate(sessionCacheRead, sessionInput);
+        ctx.ui.setStatus("avg", `avg cache ${sessionRate.toFixed(1)}% · `);
+      }
+    }
+
+    // ── DeepSeek 专属:cache armed 标签 + 持久化统计(不参与 avg) ──
     if (!isActive(ctx)) {
-      // 非 DeepSeek 模型:不统计、清除残留的状态栏（avg 常驻,不清除）
+      // 非 DeepSeek 模型:清除残留的 cache 标签（avg 常驻,不清除）
       ctx.ui.setStatus("cache", undefined);
       return;
     }
@@ -505,18 +517,11 @@ export default function (pi: ExtensionAPI) {
     input += u.input ?? 0;
     cacheWrite += u.cacheWrite ?? 0;
     turns += 1;
-    // 该对话（本会话）累计 — 仅用于常驻 avg 显示
-    sessionCacheRead += u.cacheRead ?? 0;
-    sessionInput += u.input ?? 0;
 
     scheduleSaveStats({ cacheRead, input, cacheWrite, turns });
 
     // R2: 计算一次，复用于状态栏与历史
     const rate = calcHitRate(cacheRead, input);
-    // 该对话平均命中率 — 常驻显示，DeepSeek 之外也保留
-    const sessionRate = calcHitRate(sessionCacheRead, sessionInput);
-    ctx.ui.setStatus("avg", `avg cache ${sessionRate.toFixed(1)}% · `);
-    // cache 槽保持 "cache armed" 标签（实际命中率见 avg）
 
     // R3: 用 toFixed(1) 做定点比较，避免浮点去重失效
     const rateKey = rate.toFixed(1);
