@@ -340,6 +340,17 @@ describe("模型过滤:仅 DeepSeek 模型激活", () => {
     expect(mockCtx.ui.setStatus).toHaveBeenCalledWith("avg", "avg cache 0.0% · ");
   });
 
+  it("session_start 时按当前模型补设 cache armed(首次启动 model_select 不触发)", async () => {
+    // mockCtx.model 默认是 deepseek
+    await api.__emit("session_start", { reason: "resume" });
+    expect(mockCtx.ui.setStatus).toHaveBeenCalledWith("cache", "cache armed");
+  });
+
+  it("session_start 时当前模型非 DeepSeek 则清空 cache 标签", async () => {
+    await api.__emit("session_start", { reason: "new" }, claudeCtx);
+    expect(mockCtx.ui.setStatus).toHaveBeenCalledWith("cache", undefined);
+  });
+
   it("DeepSeek 消息后 avg 更新为该对话命中率", async () => {
     await api.__emit("session_start", { reason: "new" });
     await api.__emit("message_end", { message: { role: "assistant", usage: { cacheRead: 80, input: 20, cacheWrite: 0 } } });

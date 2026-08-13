@@ -488,6 +488,11 @@ export default function (pi: ExtensionAPI) {
 
     const sessionRate = calcHitRate(sessionCacheRead, sessionInput);
     ctx.ui.setStatus("avg", `avg cache ${sessionRate.toFixed(1)}% · `);
+
+    // 首次启动/pi -c 时 model_select 不一定触发,这里根据当前模型补设 cache armed
+    if (ctx.model) {
+      ctx.ui.setStatus("cache", isDeepSeekModel(ctx.model) ? "cache armed" : undefined);
+    }
   });
 
   pi.on("message_end", async (event, ctx) => {
@@ -511,6 +516,8 @@ export default function (pi: ExtensionAPI) {
       ctx.ui.setStatus("cache", undefined);
       return;
     }
+    // 补设 cache armed,防止首次启动时 model_select 未触发导致标签缺失
+    ctx.ui.setStatus("cache", "cache armed");
     if (event.message.role !== "assistant") return;
     const u = event.message.usage;
     if (!u) return;
