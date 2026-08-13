@@ -4,8 +4,9 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 
 function clearPersistedData() {
-  const dir = join(homedir(), ".pi", "agent", "extensions", "deepseek-cache");
-  ["stats.json", "history.json"].forEach((f) => {
+  const dir = process.env.PI_DEEPSEEK_CACHE_DIR
+    ?? join(homedir(), ".pi", "agent", "extensions", "deepseek-cache");
+  ["stats.json", "history.json", "summary-cache.json"].forEach((f) => {
     const p = join(dir, f);
     if (existsSync(p)) unlinkSync(p);
   });

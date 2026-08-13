@@ -53,7 +53,8 @@ interface HistoryPoint {
 //  持久化存储
 // ═══════════════════════════════════════════════════════════════════════════
 
-const STATS_DIR = join(homedir(), ".pi", "agent", "extensions", "deepseek-cache");
+const STATS_DIR = process.env.PI_DEEPSEEK_CACHE_DIR
+  ?? join(homedir(), ".pi", "agent", "extensions", "deepseek-cache");
 const STATS_FILE = join(STATS_DIR, "stats.json");
 const HISTORY_FILE = join(STATS_DIR, "history.json");
 const SUMMARY_CACHE_FILE = join(STATS_DIR, "summary-cache.json"); // R12
