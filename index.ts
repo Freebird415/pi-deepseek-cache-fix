@@ -175,18 +175,6 @@ function loadHistory(): HistoryPoint[] {
   return [];
 }
 
-function saveHistory(h: Array<{ turn: number; hitRate: number; timestamp: number }>) {
-  try {
-    if (!existsSync(STATS_DIR)) mkdirSync(STATS_DIR, { recursive: true });
-    writeFileSync(HISTORY_FILE, JSON.stringify(h.slice(-MAX_HISTORY_POINTS), null, 2));
-  } catch (err) {
-    if (extensionCtx) {
-      const msg = err instanceof Error ? err.message : String(err);
-      extensionCtx.ui.notify(`[deepseek-cache] history.json 写入失败: ${msg}`, "error");
-    }
-  }
-}
-
 // R12: 摘要缓存落盘 — 跨会话复用
 function loadSummaryCache(): Map<string, string> {
   try {
