@@ -589,6 +589,7 @@ export default function (pi: ExtensionAPI) {
       hitRateHistory.length = 0;
       lastHitRate = 0;
       lastPrefixHash = undefined;
+      lastPrefixLen = 0;
       prefixBreaks = 0;
       summaryCache.clear();
       flushPendingWrites();
@@ -613,26 +614,35 @@ export default function (pi: ExtensionAPI) {
 
   // R1: 前缀指纹 → 缓存破坏诊断
   let lastPrefixHash: string | undefined;
+  let lastPrefixLen = 0;
   let prefixBreaks = 0;
   pi.on("before_provider_request", (event, ctx) => {
     setExtensionCtx(ctx);
     if (!isActive(ctx)) {
       lastPrefixHash = undefined; // 复位指纹,避免切回 DeepSeek 时误报前缀变化
+      lastPrefixLen = 0;
       return;
     }
     const msgs = (event.payload as ProviderPayload).messages ?? [];
-    const currentPrefixHash = createHash("sha256")
-      .update(JSON.stringify(msgs.slice(0, -1))).digest("hex");
 
-    // 检测前缀变化：若上一轮有哈希且当前哈希不是其延续（即既有前缀被修改而非追加）
-    if (lastPrefixHash !== undefined && currentPrefixHash !== lastPrefixHash) {
-      prefixBreaks++;
-      ctx.ui.notify(
-        `检测到缓存前缀变化（第 ${prefixBreaks} 次），本轮可能未命中缓存`,
-        "warning",
-      );
+    // 正确检测:只比较“上一轮已有的那段消息”在当前请求里是否逐字节一致。
+    // 对话正常增长(尾部追加)时 overlap 哈希不变,不应告警;
+    // 仅当既有消息被修改/删除(或 compaction 重写历史)时才告警。
+    if (lastPrefixHash !== undefined) {
+      const overlap = msgs.slice(0, lastPrefixLen);
+      const overlapHash = createHash("sha256")
+        .update(JSON.stringify(overlap)).digest("hex");
+      if (overlapHash !== lastPrefixHash) {
+        prefixBreaks++;
+        ctx.ui.notify(
+          `检测到缓存前缀变化（第 ${prefixBreaks} 次），本轮可能未命中缓存`,
+          "warning",
+        );
+      }
     }
-    lastPrefixHash = currentPrefixHash;
+    lastPrefixHash = createHash("sha256")
+      .update(JSON.stringify(msgs)).digest("hex");
+    lastPrefixLen = msgs.length;
   });
 
   // ───────── 模型切换:离开 DeepSeek 时清理状态 ─────────

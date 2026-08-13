@@ -173,6 +173,33 @@ describe("P2: volatile-scratch stripping", () => {
     expect(ctx).toBeDefined();
     ctx({ payload: { messages: [{ role: "system", content: "a" }, { role: "user", content: "b" }] } }, mockCtx);
   });
+
+  it("对话正常增长时前缀检测不误报", async () => {
+    const listener = api.__getListener("before_provider_request");
+    // 请求1(首次,建立基线)
+    listener({ payload: { messages: [{ role: "system", content: "s" }, { role: "user", content: "u1" }] } }, mockCtx);
+    // 请求2:尾部追加 assistant + toolResult(正常增长)
+    listener({ payload: { messages: [{ role: "system", content: "s" }, { role: "user", content: "u1" }, { role: "assistant", content: "a1" }, { role: "toolResult", toolName: "bash" }] } }, mockCtx);
+    // 请求3:继续追加
+    listener({ payload: { messages: [{ role: "system", content: "s" }, { role: "user", content: "u1" }, { role: "assistant", content: "a1" }, { role: "toolResult", toolName: "bash" }, { role: "assistant", content: "a2" }] } }, mockCtx);
+    expect(mockCtx.ui.notify).not.toHaveBeenCalled();
+  });
+
+  it("既有消息被修改时前缀检测告警", async () => {
+    const listener = api.__getListener("before_provider_request");
+    listener({ payload: { messages: [{ role: "system", content: "s" }, { role: "user", content: "u1" }] } }, mockCtx);
+    // 修改了 user 消息内容(前缀被破坏)
+    listener({ payload: { messages: [{ role: "system", content: "s" }, { role: "user", content: "u1-CHANGED" }, { role: "assistant", content: "a1" }] } }, mockCtx);
+    expect(mockCtx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("缓存前缀变化"), "warning");
+  });
+
+  it("消息被删除(长度收缩)时前缀检测告警", async () => {
+    const listener = api.__getListener("before_provider_request");
+    listener({ payload: { messages: [{ role: "system", content: "s" }, { role: "user", content: "u1" }, { role: "assistant", content: "a1" }] } }, mockCtx);
+    // 收缩(如 compaction 重写历史)
+    listener({ payload: { messages: [{ role: "system", content: "summary" }, { role: "user", content: "u2" }] } }, mockCtx);
+    expect(mockCtx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("缓存前缀变化"), "warning");
+  });
 });
 
 // ═══ P3: session_before_compact ═══
