@@ -1,7 +1,7 @@
 {
   "name": "pi-deepseek-cache",
-  "version": "0.1.0",
-  "description": "DeepSeek prefix-cache extension for pi — hit-rate telemetry, prefix guard, and cache-friendly compaction.",
+  "version": "0.2.0",
+  "description": "DeepSeek prefix-cache extension for pi — hit-rate telemetry, persistent avg-cache display, DeepSeek-only activation, cache backfill on resume, prefix guard, and cache-friendly compaction. (Fork of ruanbw/pi-deepseek-cache)",
   "type": "module",
   "main": "./index.ts",
   "exports": {
@@ -27,9 +27,14 @@
     "cache",
     "prefix-cache",
     "coding-agent",
-    "extension"
+    "extension",
+    "model-filter",
+    "cache-backfill"
   ],
-  "author": "ruanbw",
+  "author": "Freebird415",
+  "contributors": [
+    "ruanbw"
+  ],
   "license": "MIT",
   "dependencies": {
     "@earendil-works/pi-ai": "^0.78.0",
@@ -48,10 +53,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ruanbw/pi-deepseek-cache.git"
+    "url": "git+https://github.com/Freebird415/pi-deepseek-cache-fix.git"
   },
   "bugs": {
-    "url": "https://github.com/ruanbw/pi-deepseek-cache/issues"
+    "url": "https://github.com/Freebird415/pi-deepseek-cache-fix/issues"
   },
-  "homepage": "https://github.com/ruanbw/pi-deepseek-cache#readme"
+  "homepage": "https://github.com/Freebird415/pi-deepseek-cache-fix#readme"
 }

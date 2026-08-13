@@ -60,14 +60,10 @@ Status bar is cleared on model switch away, and shows `cache armed` when switchi
 Requires [Pi](https://pi.dev) and Node.js ≥ 18.
 
 ```bash
-pi install npm:pi-deepseek-cache
+pi install git:github.com/Freebird415/pi-deepseek-cache-fix
 ```
 
-Or install from git:
-
-```bash
-pi install git:github.com/ruanbw/pi-deepseek-cache
-```
+> This repo is a fork of ruanbw/pi-deepseek-cache with model gating, a persistent average-hit-rate display, and cache backfill on resume added.
 
 ## 🚦 Quick start
 

@@ -60,14 +60,10 @@ DeepSeek API 内置了**磁盘上下文缓存**：任何提示**前缀**与之�
 需要 [Pi](https://pi.dev) 和 Node.js ≥ 18。
 
 ```bash
-pi install npm:pi-deepseek-cache
+pi install git:github.com/Freebird415/pi-deepseek-cache-fix
 ```
 
-或从 Git 安装：
-
-```bash
-pi install git:github.com/ruanbw/pi-deepseek-cache
-```
+> 本仓库为 ruanbw/pi-deepseek-cache 的 fork，新增了模型过滤、常驻平均命中率、缓存回填等能力。
 
 ## 🚦 快速开始
 
