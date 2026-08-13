@@ -1,61 +1,22 @@
-<div align="center">
+# pi-deepseek-cache
 
-# 🚀 pi-deepseek-cache
+> 本仓库是 [ruanbw/pi-deepseek-cache](https://github.com/ruanbw/pi-deepseek-cache) 的 fork，原作者 [@ruanbw](https://github.com/ruanbw)。
+> 新增了「仅 DeepSeek 激活」「常驻平均命中率显示」「恢复会话时缓存回填」等功能。
 
-**充分发挥 [Pi](https://pi.dev) 编码代理中 DeepSeek 上下文缓存的能力。**
+一个 [Pi](https://pi.dev) 扩展，充分发挥 DeepSeek 提示缓存的优势：稳定提示前缀、更高缓存命中率、实时统计——让长会话成本降低约 90%。
 
-稳定的提示前缀 · 更高的缓存命中率 · 实时缓存统计 — 让长会话成本降低 **90%**。
+## 功能特性
 
-[![npm version](https://img.shields.io/npm/v/pi-deepseek-cache.svg)](https://www.npmjs.com/package/pi-deepseek-cache)
-[![npm downloads](https://img.shields.io/npm/dm/pi-deepseek-cache.svg)](https://www.npmjs.com/package/pi-deepseek-cache)
-[![license](https://img.shields.io/npm/l/pi-deepseek-cache.svg)](./LICENSE)
+- **仅 DeepSeek 模型激活** — 仅在 DeepSeek 模型（直连 `deepseek`，或 `openrouter` 下 id 以 `deepseek/` 开头的模型）下运行，其他模型不受影响。
+- **常驻平均命中率** — `avg cache xx.x%` 常驻显示整个对话（含所有模型）的缓存命中率。
+- **`cache armed` 指示** — DeepSeek 模型激活时显示。
+- **命中率遥测** — 累计 `cacheRead` / `input` / `cacheWrite` / `turns`，持久化到磁盘。
+- **恢复时回填缓存** — 用 `pi -c` 恢复会话时，自动回填历史缓存统计。
+- **前缀守卫** — 过滤 `volatile-scratch` 消息，只检测真正的缓存前缀变化（而非正常的对话增长）。
+- **缓存友好压缩** — 用 `deepseek-v4-flash`（temperature 0）做确定性摘要，按哈希跨会话复用。
+- **命令** — `/cache-stats`、`/cache-graph`、`/cache-reset`。
 
-[English](./README.md) | [中文](./README.zh.md)
-
-</div>
-
----
-
-## ✨ 为什么需要这个
-
-DeepSeek API 内置了**磁盘上下文缓存**：任何提示**前缀**与之前完全匹配的请求，都按更便宜的*缓存命中*费率计费（通常减免约 90%）。但前提是——提示前缀必须**逐字节稳定**。
-
-在长时间的代理会话中，这出乎意料地困难：
-
-- 系统提示或工具列表在各轮之间微妙变化
-- 对话历史不断增长和偏移
-- 大型 / 非确定性的工具输出破坏前缀
-- 重复的元数据块未对齐
-
-**`pi-deepseek-cache`** 让你的 DeepSeek 提示保持缓存友好，并精确展示效果。
-
-## 🎯 功能特性
-
-- **前缀守卫** — 从上下文中剥离 `volatile-scratch` 消息，保持字节前缀跨轮次稳定
-- **缓存破坏诊断** — 检测到缓存前缀意外变化时立即通知
-- **命中率遥测** — 从每次响应中累计 `cacheRead` / `input` / `cacheWrite` / `turns`，持久化到磁盘
-- **实时状态栏** — 每条消息后在 Pi 底栏显示命中率和轮次
-- **ASCII 趋势图** — 使用 `/cache-graph` 可视化缓存命中率趋势
-- **成本节省估算** — 在 `/cache-stats` 中显示预估节省金额
-- **缓存友好的 compaction** — 使用 `deepseek-v4-flash`（temperature: 0）做确定性摘要，SHA-256 缓存结果跨会话复用
-- **`/cache-reset`** — 一条命令清空所有统计、历史和摘要缓存
-
-## 🔒 模型过滤(本分支新增)
-
-本分支默认**仅在 DeepSeek 模型下激活**,其他模型(Claude / GPT / Gemini …)下:
-
-- 不干预上下文、不做前缀监控、不显示缓存状态栏
-- compaction 回退 pi 默认实现(不调用 flash 摘要)
-- `/cache-stats` `/cache-graph` `/cache-reset` 提示"当前模型不是 DeepSeek,缓存扩展未激活"
-
-判定规则(`index.ts` 中 `isDeepSeekModel`):
-
-- `provider === "deepseek"`(直连)
-- 或 `provider === "openrouter"` 且模型 id 以 `deepseek/` 开头(经 OpenRouter 代理使用 DeepSeek)
-
-切换模型时自动清理状态栏,切回 DeepSeek 时显示 `cache armed`。
-
-## 📦 安装
+## 安装
 
 需要 [Pi](https://pi.dev) 和 Node.js ≥ 18。
 
@@ -63,58 +24,36 @@ DeepSeek API 内置了**磁盘上下文缓存**：任何提示**前缀**与之�
 pi install git:github.com/Freebird415/pi-deepseek-cache-fix
 ```
 
-> 本仓库为 ruanbw/pi-deepseek-cache 的 fork，新增了模型过滤、常驻平均命中率、缓存回填等能力。
+### Windows 用户注意
 
-## 🚦 快速开始
-
-1. 确保已配置 DeepSeek provider（设置 `DEEPSEEK_API_KEY`）。
-2. 选择 DeepSeek 模型，如 `deepseek/deepseek-chat`。
-3. 开始编码——扩展会自动激活并在底栏显示缓存统计。
+安装前先执行一次（开启 git 长路径支持）。某个传递依赖的文件名极长，会超过 Windows 260 字符路径限制，导致安装时报 "Filename too long"：
 
 ```bash
-export DEEPSEEK_API_KEY=sk-...
-pi --model deepseek/deepseek-chat
+git config --global core.longPaths true
 ```
 
-## 🧩 命令
+## 使用
+
+1. 配置 DeepSeek provider（设置 `DEEPSEEK_API_KEY`）。
+2. 选择 DeepSeek 模型（如 `deepseek/deepseek-chat`）。
+3. 扩展自动激活，底栏显示 `avg cache xx.x% · cache armed`。
+
+## 命令
 
 | 命令 | 说明 |
 |------|------|
-| `/cache-stats` | 弹窗显示命中率、缓存命中/未命中 token、轮次和预估节省 |
-| `/cache-graph` | 弹窗显示缓存命中率 ASCII 趋势图 |
-| `/cache-reset` | 重置所有统计、历史和摘要缓存（同时清除内存和磁盘） |
+| `/cache-stats` | 命中率、缓存命中/未命中 token、轮次、预估节省 |
+| `/cache-graph` | 缓存命中率 ASCII 趋势图 |
+| `/cache-reset` | 清空所有统计、历史和摘要缓存 |
 
-## 🔍 工作原理
+## 工作原理
 
 | 层 | 说明 |
 |----|------|
-| **P1 — 遥测** | 在 `message_end` 事件中累计 `cacheRead` / `input` / `cacheWrite` / `turns`，持久化到 `~/.pi/agent/extensions/deepseek-cache/stats.json` |
-| **P2 — 前缀守卫** | 在 `context` 钩子中过滤 `customType="volatile-scratch"` 的消息，防止易变内容破坏字节前缀。监控前缀哈希并在意外变化时告警。 |
-| **P3 — Compaction** | 在 `session_before_compact` 时用 `deepseek-v4-flash`（temperature: 0）做摘要，按 SHA-256 hash 缓存并持久化到磁盘，支持跨会话复用。 |
+| **P1 — 遥测** | `message_end` 时累计 `cacheRead`/`input`/`cacheWrite`/`turns`，持久化到 `~/.pi/agent/extensions/deepseek-cache/` |
+| **P2 — 前缀守卫** | `context` 钩子过滤 `volatile-scratch` 消息；SHA-256 指纹检测真正的缓存前缀变化 |
+| **P3 — 压缩** | `deepseek-v4-flash`（temperature 0）确定性摘要，按 SHA-256 跨会话缓存 |
 
-> 📖 底层机制详见：[DeepSeek 上下文缓存文档](https://api-docs.deepseek.com/guides/kv_cache)
+## 许可证
 
-## 🛠️ 故障排查
-
-- **缓存命中率低** → 通常是静态前缀在变化。避免在提示开头注入时间戳、随机 ID 或易变的工具输出。
-- **"Cache prefix change" 警告** → 对话历史中的某些内容被修改。检查是否有工具或扩展在变更过去的消息。
-- **底栏无显示** → 确认已选择 DeepSeek 模型且 API Key 已设置。
-
-## 🧪 测试
-
-```bash
-npm test              # 28 个测试（18 单元 + 10 集成）
-```
-
-## 🤝 贡献
-
-欢迎提交 Issue 和 PR！提交前请运行：
-
-```bash
-npm run lint          # ESLint + Prettier 检查
-npm test              # 单元 + 集成测试
-```
-
-## 📄 许可证
-
-[MIT](./LICENSE) © ruanbw
+[MIT](./LICENSE) © Freebird415、[ruanbw](https://github.com/ruanbw)

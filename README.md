@@ -1,61 +1,22 @@
-<div align="center">
+# pi-deepseek-cache
 
-# 🚀 pi-deepseek-cache
+> Fork of [ruanbw/pi-deepseek-cache](https://github.com/ruanbw/pi-deepseek-cache), created by [@ruanbw](https://github.com/ruanbw).
+> Adds DeepSeek-only activation, a persistent average-hit-rate display, and cache backfill on resume.
 
-**Squeeze the most out of DeepSeek's context caching inside the [Pi](https://pi.dev) coding agent.**
+A [Pi](https://pi.dev) extension that gets the most out of DeepSeek's prompt caching: stable prompt prefixes, higher cache-hit rates, and real-time telemetry — cutting long-session costs by ~90%.
 
-Stable prompt prefixes · higher cache-hit rates · live cache stats — so long sessions cost up to **90% less**.
+## Features
 
-[![npm version](https://img.shields.io/npm/v/pi-deepseek-cache.svg)](https://www.npmjs.com/package/pi-deepseek-cache)
-[![npm downloads](https://img.shields.io/npm/dm/pi-deepseek-cache.svg)](https://www.npmjs.com/package/pi-deepseek-cache)
-[![license](https://img.shields.io/npm/l/pi-deepseek-cache.svg)](./LICENSE)
+- **DeepSeek-only activation** — the extension only runs for DeepSeek models (direct `deepseek` provider, or `openrouter` models with a `deepseek/` id). All other models are left untouched.
+- **Persistent average hit rate** — an `avg cache xx.x%` status always shows the whole conversation's cache-hit rate across every model.
+- **`cache armed` indicator** — shown whenever a DeepSeek model is active.
+- **Hit-rate telemetry** — accumulates `cacheRead` / `input` / `cacheWrite` / `turns` and persists them to disk.
+- **Cache backfill on resume** — restores historical cache stats when resuming a session with `pi -c`.
+- **Prefix guard** — strips `volatile-scratch` messages and detects real prefix changes (not normal conversation growth).
+- **Cache-friendly compaction** — deterministic `deepseek-v4-flash` summaries (temperature 0), hash-cached across sessions.
+- **Commands** — `/cache-stats`, `/cache-graph`, `/cache-reset`.
 
-[English](./README.md) | [中文](./README.zh.md)
-
-</div>
-
----
-
-## ✨ Why this exists
-
-DeepSeek's API has **Context Caching on Disk** built in: any request whose prompt **prefix** exactly matches a previous one is billed at the much cheaper *cache-hit* rate (often ~90% off). The catch — cache hits only happen when your prompt prefixes stay **byte-for-byte stable**.
-
-In long agent sessions that's surprisingly hard:
-
-- the system prompt or tool list changes subtly between turns
-- conversation history grows and shifts
-- large / non-deterministic tool outputs break the prefix
-- repeated metadata blocks aren't aligned
-
-**`pi-deepseek-cache`** keeps your DeepSeek prompts cache-friendly and shows you exactly how well it's working.
-
-## 🎯 Features
-
-- **Prefix Guard** — strips `volatile-scratch` messages from the context to keep the byte prefix stable across turns
-- **Cache Break Diagnostics** — detects when the cache prefix unexpectedly changes and notifies you immediately
-- **Hit Rate Telemetry** — accumulates `cacheRead` / `input` / `cacheWrite` / `turns` from every response and persists to disk
-- **Live Status Bar** — see hit rate and turn count in the Pi footer after every message
-- **ASCII Trend Chart** — visualize cache hit rate over time with `/cache-graph`
-- **Cost Savings Estimation** — estimated dollar savings displayed in `/cache-stats`
-- **Cache-Friendly Compaction** — uses `deepseek-v4-flash` (temperature: 0) for deterministic summarization, with SHA-256–cached results persisted across sessions
-- **`/cache-reset`** — clear all stats, history, and summary cache with one command
-
-## 🔒 Model gating (added in this fork)
-
-By default this fork only activates when a **DeepSeek** model is in use. With any other model (Claude / GPT / Gemini …):
-
-- No context interference, no prefix monitoring, no cache status bar
-- Compaction falls back to pi's default (no flash summarizer call)
-- `/cache-stats` `/cache-graph` `/cache-reset` show "not active" notice
-
-Matching rule (`isDeepSeekModel` in `index.ts`):
-
-- `provider === "deepseek"` (direct)
-- or `provider === "openrouter"` with model id starting with `deepseek/` (via OpenRouter)
-
-Status bar is cleared on model switch away, and shows `cache armed` when switching to DeepSeek.
-
-## 📦 Installation
+## Installation
 
 Requires [Pi](https://pi.dev) and Node.js ≥ 18.
 
@@ -63,58 +24,36 @@ Requires [Pi](https://pi.dev) and Node.js ≥ 18.
 pi install git:github.com/Freebird415/pi-deepseek-cache-fix
 ```
 
-> This repo is a fork of ruanbw/pi-deepseek-cache with model gating, a persistent average-hit-rate display, and cache backfill on resume added.
+### Windows
 
-## 🚦 Quick start
-
-1. Make sure a DeepSeek provider is configured (`DEEPSEEK_API_KEY` set).
-2. Select a DeepSeek model such as `deepseek/deepseek-chat`.
-3. Start coding — the extension activates automatically and reports cache stats in the footer.
+Run once before installing. A transitive dependency ships very long filenames that exceed the Windows 260-character path limit, causing `git clean` to fail with "Filename too long":
 
 ```bash
-export DEEPSEEK_API_KEY=sk-...
-pi --model deepseek/deepseek-chat
+git config --global core.longPaths true
 ```
 
-## 🧩 Commands
+## Usage
+
+1. Configure a DeepSeek provider (set `DEEPSEEK_API_KEY`).
+2. Select a DeepSeek model such as `deepseek/deepseek-chat`.
+3. The extension activates automatically; the footer shows `avg cache xx.x% · cache armed`.
+
+## Commands
 
 | Command | Description |
 |---------|-------------|
-| `/cache-stats` | Overlay popup with hit rate, cached/missed tokens, turns, and estimated savings |
-| `/cache-graph` | Overlay popup with ASCII trend chart of cache hit rate over time |
-| `/cache-reset` | Reset all stats, history, and summary cache (clears both memory and disk) |
+| `/cache-stats` | Hit rate, cache hit/miss tokens, turns, and estimated savings |
+| `/cache-graph` | ASCII trend of the cache-hit rate |
+| `/cache-reset` | Clear all stats, history, and the summary cache |
 
-## 🔍 How it works
+## How it works
 
-| Layer | What it does |
+| Layer | Description |
 |-------|-------------|
-| **P1 — Telemetry** | Accumulates `cacheRead` / `input` / `cacheWrite` / `turns` from `message_end` events, persists to `~/.pi/agent/extensions/deepseek-cache/stats.json` |
-| **P2 — Prefix Guard** | Filters out messages with `customType="volatile-scratch"` in the `context` hook, preventing volatile content from breaking the byte prefix. Monitors prefix hashes and alerts on unexpected changes. |
-| **P3 — Compaction** | On `session_before_compact`, summarizes history with `deepseek-v4-flash` at temperature 0. Summaries are cached by SHA-256 hash and persisted to disk for cross-session reuse. |
+| **P1 — Telemetry** | Accumulates `cacheRead` / `input` / `cacheWrite` / `turns` on `message_end`, persisted to `~/.pi/agent/extensions/deepseek-cache/` |
+| **P2 — Prefix guard** | Filters `volatile-scratch` messages in the `context` hook; a SHA-256 fingerprint detects real prefix changes |
+| **P3 — Compaction** | Deterministic `deepseek-v4-flash` (temperature 0) summaries, cached by SHA-256 across sessions |
 
-> 📖 More on the underlying mechanism: [DeepSeek Context Caching docs](https://api-docs.deepseek.com/guides/kv_cache)
+## License
 
-## 🛠️ Troubleshooting
-
-- **Cache hit rate is low** → usually a changing static prefix. Avoid injecting timestamps, random IDs, or volatile tool output near the start of the prompt.
-- **"Cache prefix change" warning** → something in the earlier conversation history was modified. Check if a tool or extension is mutating past messages.
-- **Footer shows nothing** → confirm a DeepSeek model is selected and your API key is set.
-
-## 🧪 Test
-
-```bash
-npm test              # 28 tests (18 unit + 10 integration)
-```
-
-## 🤝 Contributing
-
-Issues and PRs welcome! Please run `npm test` before submitting.
-
-```bash
-npm run lint          # ESLint + Prettier check
-npm test              # Unit + integration tests
-```
-
-## 📄 License
-
-[MIT](./LICENSE) © ruanbw
+[MIT](./LICENSE) © Freebird415, [ruanbw](https://github.com/ruanbw)

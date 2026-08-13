@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 
 // ═══════════════════════════════════════════════════════════════════════════
-//  常量
+//  Constants
 // ═══════════════════════════════════════════════════════════════════════════
 
 const STATS_OVERLAY_WIDTH = 56;
@@ -20,11 +20,11 @@ const MAX_HISTORY_POINTS = 100;
 const SUMMARY_MAX_TOKENS = 8192;
 const FLAT_CHART_EPSILON = 0.05;
 
-// R12: 成本估算 — DeepSeek 定价（每百万 token，美元）
-const COST_PER_MILLION_CACHE_READ = 0.027;   // 缓存命中单价
-const COST_PER_MILLION_INPUT = 0.27;          // 缓存未命中单价
+// R12: Cost estimation — DeepSeek pricing (per million tokens, USD)
+const COST_PER_MILLION_CACHE_READ = 0.027;   // cache-hit unit price
+const COST_PER_MILLION_INPUT = 0.27;          // cache-miss unit price
 
-// ───────── R9: 局部类型定义，消除 any ─────────
+// ───────── R9: Local type definitions, avoid any ─────────
 
 interface CachedMessage {
   role: string;
@@ -50,7 +50,7 @@ interface HistoryPoint {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-//  持久化存储
+//  Persistence
 // ═══════════════════════════════════════════════════════════════════════════
 
 const STATS_DIR = process.env.PI_DEEPSEEK_CACHE_DIR
@@ -68,13 +68,13 @@ function loadStats(): PersistedStats {
   } catch (err) {
     if (extensionCtx) {
       const msg = err instanceof Error ? err.message : String(err);
-      extensionCtx.ui.notify(`[deepseek-cache] stats.json 解析失败 (${msg}),已重置`, "warning");
+      extensionCtx.ui.notify(`[deepseek-cache] stats.json parse failed (${msg}), reset`, "warning");
     }
   }
   return { cacheRead: 0, input: 0, cacheWrite: 0, turns: 0 };
 }
 
-// R8: 异步节流写入 — 合并高频调用，减少同步 I/O 阻塞
+// R8: Async debounced writes — coalesce frequent calls, reduce sync I/O blocking
 const WRITE_DEBOUNCE_MS = 1000;
 let pendingStats: PersistedStats | null = null;
 let statsTimer: ReturnType<typeof setTimeout> | null = null;
@@ -96,7 +96,7 @@ function scheduleSaveStats(s: PersistedStats) {
       } catch (err) {
         if (extensionCtx) {
           const msg = err instanceof Error ? err.message : String(err);
-          extensionCtx.ui.notify(`[deepseek-cache] stats.json 写入失败: ${msg}`, "error");
+          extensionCtx.ui.notify(`[deepseek-cache] stats.json write failed: ${msg}`, "error");
         }
       }
     })();
@@ -118,14 +118,14 @@ function scheduleSaveHistory(h: HistoryPoint[]) {
       } catch (err) {
         if (extensionCtx) {
           const msg = err instanceof Error ? err.message : String(err);
-          extensionCtx.ui.notify(`[deepseek-cache] history.json 写入失败: ${msg}`, "error");
+          extensionCtx.ui.notify(`[deepseek-cache] history.json write failed: ${msg}`, "error");
         }
       }
     })();
   }, WRITE_DEBOUNCE_MS);
 }
 
-/** R8: 会话结束时强制 flush，避免丢数据 */
+/** R8: Force flush on session end to avoid data loss */
 function flushPendingWrites() {
   if (statsTimer) {
     clearTimeout(statsTimer);
@@ -140,7 +140,7 @@ function flushPendingWrites() {
     } catch (err) {
       if (extensionCtx) {
         const msg = err instanceof Error ? err.message : String(err);
-        extensionCtx.ui.notify(`[deepseek-cache] stats.json flush 失败: ${msg}`, "error");
+        extensionCtx.ui.notify(`[deepseek-cache] stats.json flush failed: ${msg}`, "error");
       }
     }
   }
@@ -157,7 +157,7 @@ function flushPendingWrites() {
     } catch (err) {
       if (extensionCtx) {
         const msg = err instanceof Error ? err.message : String(err);
-        extensionCtx.ui.notify(`[deepseek-cache] history.json flush 失败: ${msg}`, "error");
+        extensionCtx.ui.notify(`[deepseek-cache] history.json flush failed: ${msg}`, "error");
       }
     }
   }
@@ -169,13 +169,13 @@ function loadHistory(): HistoryPoint[] {
   } catch (err) {
     if (extensionCtx) {
       const msg = err instanceof Error ? err.message : String(err);
-      extensionCtx.ui.notify(`[deepseek-cache] history.json 解析失败 (${msg}),已重置`, "warning");
+      extensionCtx.ui.notify(`[deepseek-cache] history.json parse failed (${msg}), reset`, "warning");
     }
   }
   return [];
 }
 
-// R12: 摘要缓存落盘 — 跨会话复用
+// R12: Persist summary cache — reused across sessions
 function loadSummaryCache(): Map<string, string> {
   try {
     if (existsSync(SUMMARY_CACHE_FILE)) {
@@ -185,7 +185,7 @@ function loadSummaryCache(): Map<string, string> {
   } catch (err) {
     if (extensionCtx) {
       const msg = err instanceof Error ? err.message : String(err);
-      extensionCtx.ui.notify(`[deepseek-cache] summary-cache.json 解析失败 (${msg}),已重置`, "warning");
+      extensionCtx.ui.notify(`[deepseek-cache] summary-cache.json parse failed (${msg}), reset`, "warning");
     }
   }
   return new Map();
@@ -200,16 +200,16 @@ function saveSummaryCache(cache: Map<string, string>) {
   } catch (err) {
     if (extensionCtx) {
       const msg = err instanceof Error ? err.message : String(err);
-      extensionCtx.ui.notify(`[deepseek-cache] summary-cache.json 写入失败: ${msg}`, "error");
+      extensionCtx.ui.notify(`[deepseek-cache] summary-cache.json write failed: ${msg}`, "error");
     }
   }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-//  Overlay 组件
+//  Overlay components
 // ═══════════════════════════════════════════════════════════════════════════
 
-/** 缓存统计弹窗 */
+/** Cache stats overlay */
 class CacheStatsOverlay implements Focusable {
   readonly width = STATS_OVERLAY_WIDTH;
   focused = false;
@@ -238,7 +238,7 @@ class CacheStatsOverlay implements Focusable {
     const w = this.width;
     const inner = w - 2;
 
-    // R12: 成本节省估算 — 缓存命中 vs 未命中的差价
+    // R12: Cost-savings estimate — difference between cache hit and miss
     const savedDollars = (cacheRead / 1_000_000) * (COST_PER_MILLION_INPUT - COST_PER_MILLION_CACHE_READ);
     const savedStr = savedDollars >= 0.01 ? `$${savedDollars.toFixed(2)}` : "< $0.01";
 
@@ -248,16 +248,16 @@ class CacheStatsOverlay implements Focusable {
 
     return [
       th.fg("border", `╭${"─".repeat(inner)}╮`),
-      row(` ${th.fg("accent", "⚡ DeepSeek 缓存统计")}`),
+      row(` ${th.fg("accent", "⚡ DeepSeek Cache Stats")}`),
       row(""),
-      row(label("命中率", `${hitRate}%`)),
-      row(label("缓存命中", `${cacheRead.toLocaleString()} tokens`)),
-      row(label("缓存未命中", `${input.toLocaleString()} tokens`)),
-      row(label("缓存写入", `${cacheWrite.toLocaleString()} tokens`)),
-      row(label("对话轮次", `${turns}`)),
-      row(label("预估节省", `${th.fg("accent", savedStr)}`)),
+      row(label("Hit rate", `${hitRate}%`)),
+      row(label("Cache hits", `${cacheRead.toLocaleString()} tokens`)),
+      row(label("Cache misses", `${input.toLocaleString()} tokens`)),
+      row(label("Cache writes", `${cacheWrite.toLocaleString()} tokens`)),
+      row(label("Turns", `${turns}`)),
+      row(label("Est. savings", `${th.fg("accent", savedStr)}`)),
       row(""),
-      row(` ${th.fg("dim", "Esc 关闭")}`),
+      row(` ${th.fg("dim", "Esc to close")}`),
       th.fg("border", `╰${"─".repeat(inner)}╯`),
     ];
   }
@@ -266,7 +266,7 @@ class CacheStatsOverlay implements Focusable {
   dispose(): void {}
 }
 
-/** 缓存命中率趋势弹窗 */
+/** Cache hit-rate trend overlay */
 class CacheGraphOverlay implements Focusable {
   readonly width = GRAPH_OVERLAY_WIDTH;
   focused = false;
@@ -297,12 +297,12 @@ class CacheGraphOverlay implements Focusable {
     if (this.history.length === 0) {
       return [
         th.fg("border", `╭${"─".repeat(inner)}╮`),
-        row(` ${th.fg("accent", "⚡ 缓存命中率趋势")}`),
+        row(` ${th.fg("accent", "⚡ Cache Hit-Rate Trend")}`),
         row(""),
-        row(`  ${th.fg("dim", "暂无命中率数据")}`),
-        row(`  ${th.fg("dim", "请先进行多轮对话")}`),
+        row(`  ${th.fg("dim", "No hit-rate data yet")}`),
+        row(`  ${th.fg("dim", "Run a few turns first")}`),
         row(""),
-        row(` ${th.fg("dim", "Esc 关闭")}`),
+        row(` ${th.fg("dim", "Esc to close")}`),
         th.fg("border", `╰${"─".repeat(inner)}╯`),
       ];
     }
@@ -313,21 +313,21 @@ class CacheGraphOverlay implements Focusable {
     const chartH = CHART_HEIGHT;
     const chartW = Math.min(this.history.length, CHART_MAX_WIDTH);
 
-    // 采样
+    // sampling
     const step = Math.max(1, Math.floor(this.history.length / chartW));
     const data = this.history.filter((_, i) => i % step === 0).slice(-chartW);
 
-    // Y 轴标签宽度
+    // Y-axis label width
     const yW = Math.max(maxRate.toFixed(0).length, minRate.toFixed(0).length) + 1;
 
-    // R6: 命中率无波动时的特殊处理
+    // R6: Special handling for a flat hit rate
     const chart: string[] = [];
     if (maxRate - minRate < FLAT_CHART_EPSILON) {
       const mid = Math.floor(data.length / 2);
       const chartLine = " ".repeat(mid) + "━".repeat(1) + " ".repeat(data.length - mid - 1);
       chart.push(`${minRate.toFixed(0)}%`.padStart(yW) + chartLine);
       chart.push("".padStart(yW) + "─".repeat(data.length));
-      // X 轴标签
+      // X-axis labels
       const first = data[0].turn;
       const last = data[data.length - 1].turn;
       const labelLine = new Array(data.length).fill(" ");
@@ -339,7 +339,7 @@ class CacheGraphOverlay implements Focusable {
       }
       chart.push("".padStart(yW) + labelLine.join(""));
     } else {
-      // 生成图表行
+      // generate chart rows
       const chartRows: string[] = [];
       for (let r = chartH; r >= 0; r--) {
         const threshold = minRate + (maxRate - minRate) * (r / chartH);
@@ -353,19 +353,19 @@ class CacheGraphOverlay implements Focusable {
         chartRows.push(line);
       }
 
-      // X 轴
+      // X axis
       chartRows.push("".padStart(yW) + "─".repeat(data.length));
 
-      // R5: X 轴标签用字符数组定点填充，避免 padEnd 偏移错位
+      // R5: Fill X-axis labels into a char array at fixed positions to avoid padEnd misalignment
       const first = data[0].turn;
       const last = data[data.length - 1].turn;
       const xChars = new Array(data.length).fill(" ");
 
-      // 首标签从位置 0 开始
+      // first label starts at position 0
       const firstStr = String(first);
       for (let i = 0; i < firstStr.length && i < data.length; i++) xChars[i] = firstStr[i];
 
-      // 中标签居中
+      // middle label centered
       const mid = data.length ? String(data[Math.floor(data.length / 2)].turn) : "";
       if (mid !== "") {
         const midStr = String(mid);
@@ -376,7 +376,7 @@ class CacheGraphOverlay implements Focusable {
         }
       }
 
-      // 尾标签右对齐
+      // last label right-aligned
       const lastStr = String(last);
       for (let i = 0; i < lastStr.length; i++) {
         const pos = data.length - lastStr.length + i;
@@ -387,10 +387,10 @@ class CacheGraphOverlay implements Focusable {
       chart.push(...chartRows);
     }
 
-    // 组装完整弹窗
+    // assemble the full overlay
     const lines = [
       th.fg("border", `╭${"─".repeat(inner)}╮`),
-      row(` ${th.fg("accent", `⚡ 缓存命中率趋势 (${this.history.length} 个数据点)`)}`),
+      row(` ${th.fg("accent", `⚡ Cache Hit-Rate Trend (${this.history.length} points)`)}`),
       row(""),
     ];
 
@@ -399,7 +399,7 @@ class CacheGraphOverlay implements Focusable {
     }
 
     lines.push(row(""));
-    lines.push(row(` ${th.fg("dim", "Esc 关闭")}`));
+    lines.push(row(` ${th.fg("dim", "Esc to close")}`));
     lines.push(th.fg("border", `╰${"─".repeat(inner)}╯`));
 
     return lines;
@@ -410,7 +410,7 @@ class CacheGraphOverlay implements Focusable {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-//  模型过滤 — 仅 DeepSeek 模型激活本扩展（R13）
+//  Model gating — only active for DeepSeek models (R13)
 // ═══════════════════════════════════════════════════════════════════════════
 
 interface ModelRef {
@@ -418,21 +418,21 @@ interface ModelRef {
   id?: string;
 }
 
-/** 是否为 DeepSeek 模型。直连 provider=deepseek 命中;
- *  经 OpenRouter 等代理时模型 id 形如 "deepseek/deepseek-chat"。 */
+/** True if the model is DeepSeek. Direct provider=deepseek matches;
+ *  also matches openrouter models whose id starts with "deepseek/". */
 function isDeepSeekModel(model: ModelRef | undefined): boolean {
   if (!model) return false;
   if (model.provider === "deepseek") return true;
   return model.provider === "openrouter" && (model.id ?? "").startsWith("deepseek/");
 }
 
-/** 当前会话是否处于激活状态(正在使用 DeepSeek 模型) */
+/** Whether the current session is active (a DeepSeek model is in use) */
 function isActive(ctx: ExtensionContext): boolean {
   return isDeepSeekModel(ctx.model);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-//  扩展主逻辑
+//  Extension main logic
 // ═══════════════════════════════════════════════════════════════════════════
 
 export default function (pi: ExtensionAPI) {
@@ -440,11 +440,11 @@ export default function (pi: ExtensionAPI) {
   // Will be set on first event that provides ctx
   const setExtensionCtx = (ctx: ExtensionContext) => { extensionCtx = ctx; };
 
-  // ───────── P1 命中率遥测(持久化) ─────────
+  // ───────── P1 Hit-rate telemetry (persisted) ─────────
   const persisted = loadStats();
   let { cacheRead, input, cacheWrite, turns } = persisted;
-  // 该对话（本会话）平均命中率 — 常驻显示,session_start 时重置,
-  // 不写入 stats.json,独立于跨会话累计
+  // This-conversation average hit rate — persistent, reset on session_start,
+  // not written to stats.json, independent of cross-session totals
   let sessionCacheRead = 0;
   let sessionInput = 0;
   const hitRateHistory = loadHistory();
@@ -452,18 +452,18 @@ export default function (pi: ExtensionAPI) {
     ? hitRateHistory[hitRateHistory.length - 1].hitRate
     : 0;
 
-  /** R2: 单一命中率计算函数 */
+  /** R2: Single hit-rate calculation function */
   const calcHitRate = (r: number, i: number): number =>
     (r + i) ? (r / (r + i)) * 100 : 0;
 
-  // ───────── 会话级常驻平均命中率 ─────────
+  // ───────── Session-level persistent average hit rate ─────────
   pi.on("session_start", async (_event, ctx) => {
     setExtensionCtx(ctx);
     sessionCacheRead = 0;
     sessionInput = 0;
 
-    // 回填历史 assistant 消息的 cacheRead/input —— 无论模型,
-    // 得到整个对话的平均缓存命中率
+    // Backfill cacheRead/input from historical assistant messages — any model,
+    // to compute the whole-conversation average hit rate
     for (const entry of ctx.sessionManager.getEntries()) {
       if (entry.type !== "message") continue;
       const msg = entry.message;
@@ -477,7 +477,7 @@ export default function (pi: ExtensionAPI) {
     const sessionRate = calcHitRate(sessionCacheRead, sessionInput);
     ctx.ui.setStatus("avg", `avg cache ${sessionRate.toFixed(1)}% · `);
 
-    // 首次启动/pi -c 时 model_select 不一定触发,这里根据当前模型补设 cache armed
+    // On first launch / pi -c, model_select may not fire; set cache armed from the current model here
     if (ctx.model) {
       ctx.ui.setStatus("cache", isDeepSeekModel(ctx.model) ? "cache armed" : undefined);
     }
@@ -486,8 +486,8 @@ export default function (pi: ExtensionAPI) {
   pi.on("message_end", async (event, ctx) => {
     setExtensionCtx(ctx);
 
-    // ── 常驻 avg:无论什么模型,每条 assistant 消息都累计,
-    //    得到整个对话的平均缓存命中率 ──
+    // ── Persistent avg: accumulate every assistant message regardless of model,
+    //    to compute the whole-conversation average hit rate ──
     if (event.message.role === "assistant") {
       const u = event.message.usage;
       if (u) {
@@ -498,13 +498,13 @@ export default function (pi: ExtensionAPI) {
       }
     }
 
-    // ── DeepSeek 专属:cache armed 标签 + 持久化统计(不参与 avg) ──
+    // ── DeepSeek-specific: cache armed label + persisted stats (not part of avg) ──
     if (!isActive(ctx)) {
-      // 非 DeepSeek 模型:清除残留的 cache 标签（avg 常驻,不清除）
+      // Non-DeepSeek model: clear the stale cache label (avg is persistent, not cleared)
       ctx.ui.setStatus("cache", undefined);
       return;
     }
-    // 补设 cache armed,防止首次启动时 model_select 未触发导致标签缺失
+    // Re-set cache armed to guard against missing model_select on first launch
     ctx.ui.setStatus("cache", "cache armed");
     if (event.message.role !== "assistant") return;
     const u = event.message.usage;
@@ -516,14 +516,14 @@ export default function (pi: ExtensionAPI) {
 
     scheduleSaveStats({ cacheRead, input, cacheWrite, turns });
 
-    // R2: 计算一次，复用于状态栏与历史
+    // R2: Compute once, reuse for status bar and history
     const rate = calcHitRate(cacheRead, input);
 
-    // R3: 用 toFixed(1) 做定点比较，避免浮点去重失效
+    // R3: Compare via toFixed(1) to avoid float dedup failures
     const rateKey = rate.toFixed(1);
     const lastKey = lastHitRate.toFixed(1);
     if (rateKey !== lastKey) {
-      // R4: 截断内存数组，与落盘保持一致
+      // R4: Truncate the in-memory array to match the persisted one
       hitRateHistory.push({ turn: turns, hitRate: rate, timestamp: Date.now() });
       if (hitRateHistory.length > MAX_HISTORY_POINTS) {
         hitRateHistory.splice(0, hitRateHistory.length - MAX_HISTORY_POINTS);
@@ -533,13 +533,13 @@ export default function (pi: ExtensionAPI) {
     }
   });
 
-  // /cache-stats → overlay 弹窗
+  // /cache-stats → overlay
   pi.registerCommand("cache-stats", {
-    description: "DeepSeek 前缀缓存命中率",
+    description: "DeepSeek prefix-cache hit rate",
     handler: async (_args, ctx) => {
       setExtensionCtx(ctx);
       if (!isActive(ctx)) {
-        await ctx.ui.notify("当前模型不是 DeepSeek,缓存扩展未激活", "info");
+        await ctx.ui.notify("Not a DeepSeek model — cache extension inactive", "info");
         return;
       }
       await ctx.ui.custom(
@@ -550,13 +550,13 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
-  // /cache-graph → overlay 弹窗
+  // /cache-graph → overlay
   pi.registerCommand("cache-graph", {
-    description: "DeepSeek 缓存命中率趋势图",
+    description: "DeepSeek cache hit-rate trend",
     handler: async (_args, ctx) => {
       setExtensionCtx(ctx);
       if (!isActive(ctx)) {
-        await ctx.ui.notify("当前模型不是 DeepSeek,缓存扩展未激活", "info");
+        await ctx.ui.notify("Not a DeepSeek model — cache extension inactive", "info");
         return;
       }
       await ctx.ui.custom(
@@ -567,17 +567,17 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
-  // R12: /cache-reset → 清空统计数据与历史
+  // R12: /cache-reset → clear stats and history
   pi.registerCommand("cache-reset", {
-    description: "重置 DeepSeek 缓存统计数据",
+    description: "Reset DeepSeek cache stats",
     handler: async (_args, ctx) => {
       setExtensionCtx(ctx);
       if (!isActive(ctx)) {
-        await ctx.ui.notify("当前模型不是 DeepSeek,缓存扩展未激活", "info");
+        await ctx.ui.notify("Not a DeepSeek model — cache extension inactive", "info");
         return;
       }
-      // 二次确认
-      await ctx.ui.notify("缓存统计已重置", "info");
+      // confirmation
+      await ctx.ui.notify("Cache stats reset", "info");
       cacheRead = 0;
       input = 0;
       cacheWrite = 0;
@@ -589,7 +589,7 @@ export default function (pi: ExtensionAPI) {
       prefixBreaks = 0;
       summaryCache.clear();
       flushPendingWrites();
-      // 清除持久化文件
+      // remove persisted files
       try {
         if (existsSync(STATS_FILE)) unlinkSync(STATS_FILE);
         if (existsSync(HISTORY_FILE)) unlinkSync(HISTORY_FILE);
@@ -598,32 +598,33 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
-  // ───────── P2 前缀守卫 ─────────
+  // ───────── P2 Prefix guard ─────────
   pi.on("context", async (event, ctx) => {
     setExtensionCtx(ctx);
-    if (!isActive(ctx)) return; // 非 DeepSeek:不干预上下文
+    if (!isActive(ctx)) return; // Non-DeepSeek: leave context untouched
     const onWire = event.messages.filter(
       (m: unknown) => (m as { customType?: string } | undefined)?.customType !== "volatile-scratch",
     );
     return { messages: onWire };
   });
 
-  // R1: 前缀指纹 → 缓存破坏诊断
+  // R1: Prefix fingerprint → cache-break diagnosis
   let lastPrefixHash: string | undefined;
   let lastPrefixLen = 0;
   let prefixBreaks = 0;
   pi.on("before_provider_request", (event, ctx) => {
     setExtensionCtx(ctx);
     if (!isActive(ctx)) {
-      lastPrefixHash = undefined; // 复位指纹,避免切回 DeepSeek 时误报前缀变化
+      lastPrefixHash = undefined; // Reset fingerprint to avoid false "prefix changed" when switching back to DeepSeek
       lastPrefixLen = 0;
       return;
     }
     const msgs = (event.payload as ProviderPayload).messages ?? [];
 
-    // 正确检测:只比较“上一轮已有的那段消息”在当前请求里是否逐字节一致。
-    // 对话正常增长(尾部追加)时 overlap 哈希不变,不应告警;
-    // 仅当既有消息被修改/删除(或 compaction 重写历史)时才告警。
+    // Correct detection: compare whether the previous request's messages are
+    // byte-identical in the current request. Normal conversation growth
+    // (append-only) keeps the overlap hash unchanged — no warning; only warn
+    // when existing messages are modified/removed (or compaction rewrites history).
     if (lastPrefixHash !== undefined) {
       const overlap = msgs.slice(0, lastPrefixLen);
       const overlapHash = createHash("sha256")
@@ -631,7 +632,7 @@ export default function (pi: ExtensionAPI) {
       if (overlapHash !== lastPrefixHash) {
         prefixBreaks++;
         ctx.ui.notify(
-          `检测到缓存前缀变化（第 ${prefixBreaks} 次），本轮可能未命中缓存`,
+          `Cache prefix changed (${prefixBreaks}), this turn may miss the cache`,
           "warning",
         );
       }
@@ -641,7 +642,7 @@ export default function (pi: ExtensionAPI) {
     lastPrefixLen = msgs.length;
   });
 
-  // ───────── 模型切换:离开 DeepSeek 时清理状态 ─────────
+  // ───────── Model switch: clean up state when leaving DeepSeek ─────────
   pi.on("model_select", (event, ctx) => {
     setExtensionCtx(ctx);
     if (isDeepSeekModel(event.model)) {
@@ -652,18 +653,18 @@ export default function (pi: ExtensionAPI) {
     }
   });
 
-  // ───────── P3 缓存友好的 compaction ─────────
-  const summaryCache = loadSummaryCache(); // R12: 从磁盘加载摘要缓存，跨会话复用
+  // ───────── P3 Cache-friendly compaction ─────────
+  const summaryCache = loadSummaryCache(); // R12: Load summary cache from disk, reused across sessions
   pi.on("session_before_compact", async (event, ctx) => {
     setExtensionCtx(ctx);
-    if (!isActive(ctx)) return; // 非 DeepSeek:使用 pi 默认 compaction
-    flushPendingWrites(); // R8: compaction 前强制 flush,避免丢失未写数据
+    if (!isActive(ctx)) return; // Non-DeepSeek: use pi's default compaction
+    flushPendingWrites(); // R8: Force flush before compaction to avoid losing unwritten data
     const { preparation, signal } = event;
     const { messagesToSummarize, firstKeptEntryId, tokensBefore, previousSummary } = preparation;
 
     const history = serializeConversation(convertToLlm(messagesToSummarize));
     const text = previousSummary
-      ? `【上次摘要】\n${previousSummary}\n\n【新增历史】\n${history}`
+      ? `[Previous summary]\n${previousSummary}\n\n[New history]\n${history}`
       : history;
 
     const key = createHash("sha256").update(text).digest("hex");
@@ -672,7 +673,7 @@ export default function (pi: ExtensionAPI) {
       summary = await summarizeWithFlash(text, ctx, signal);
       if (!summary) return;
       summaryCache.set(key, summary);
-      saveSummaryCache(summaryCache); // R12: 新摘要落盘，跨会话复用
+      saveSummaryCache(summaryCache); // R12: Persist the new summary, reused across sessions
     }
 
     return {
@@ -693,13 +694,13 @@ async function summarizeWithFlash(
 ): Promise<string | undefined> {
   const model = ctx.modelRegistry.find("deepseek", "deepseek-v4-flash");
   if (!model) {
-    ctx.ui.notify("找不到 deepseek-v4-flash,回退默认 compaction", "warning");
+    ctx.ui.notify("deepseek-v4-flash not found, falling back to default compaction", "warning");
     return;
   }
 
   const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
   if (!auth.ok || !auth.apiKey) {
-    ctx.ui.notify("flash 摘要鉴权失败,回退默认 compaction", "warning");
+    ctx.ui.notify("flash summarizer auth failed, falling back to default compaction", "warning");
     return;
   }
 
@@ -714,9 +715,9 @@ async function summarizeWithFlash(
               {
                 type: "text" as const,
                 text:
-                  "把下面这段对话历史压缩成结构化 markdown 摘要,覆盖:" +
-                  "①目标 ②关键决策与理由 ③代码/文件改动 ④当前进度 ⑤堵塞与未决问题 ⑥后续步骤。" +
-                  "务必完整,因为它将替换这段历史。\n\n" +
+                  "Compress the following conversation history into a structured markdown summary, covering: " +
+                  "① goals ② key decisions and rationale ③ code/file changes ④ current progress ⑤ blockers and open issues ⑥ next steps. " +
+                  "Be complete, as it will replace this history.\n\n" +
                   text,
               },
             ],
@@ -735,7 +736,7 @@ async function summarizeWithFlash(
     return summary.trim() || undefined;
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
-    ctx.ui.notify(`flash 摘要失败:${msg},回退默认 compaction`, "error");
+    ctx.ui.notify(`flash summarizer failed: ${msg}, falling back to default compaction`, "error");
     return;
   }
 }
